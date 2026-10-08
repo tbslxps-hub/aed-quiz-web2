@@ -36,4 +36,111 @@ async function submitRecord(student,status){
 
 (()=>{'use strict';const $=id=>document.getElementById(id);const ids=['home','register','instructions','quiz','success'];let student=null,index=0,answered=false;const questions=[{q:'사람이 쓰러져 반응이 없다면 어떻게 해야 할까요?',a:['주변 사람에게 도움을 요청하고 119 신고를 부탁한다','물을 마시게 한다','혼자 기다린다'],correct:0,why:'주변 사람에게 도움을 요청하고 119 신고를 부탁해야 해요!'},{q:'AED를 가져왔다면 가장 먼저 무엇을 해야 할까요?',a:['기계를 흔든다','전원을 켠다','충격 버튼을 누른다'],correct:1,why:'AED의 전원을 켜고 음성 안내를 따라야 해요!'},{q:'가슴압박을 할 때 올바른 방법은?',a:['아주 천천히 누른다','가슴을 누른 채 손에 계속 힘을 준다','빠르고 강하게 누른 뒤 가슴이 충분히 올라오게 한다'],correct:2,why:'빠르고 강하게 압박하고, 압박 사이에는 가슴이 충분히 이완되도록 해요!'}];function show(id){ids.forEach(x=>$(x).classList.toggle('hidden',x!==id));window.scrollTo(0,0)}function render(){const q=questions[index];$('quizTitle').textContent='문제 '+(index+1)+' / 3';$('progress').textContent='MISSION 0'+(index+1)+' / 03';$('hearts').textContent='❤️ '.repeat(index+1)+'🤍 '.repeat(2-index);$('question').textContent=q.q;$('answers').replaceChildren();$('feedback').textContent='';$('nextQuestion').classList.add('hidden');answered=false;q.a.forEach((answer,i)=>{const b=document.createElement('button');b.type='button';b.className='choice';const num=document.createElement('span');num.textContent=i+1;const txt=document.createElement('div');txt.textContent=answer;b.append(num,txt);b.addEventListener('click',()=>select(i));$('answers').append(b)})}function select(i){if(answered)return;const q=questions[index],buttons=[...$('answers').children];if(i===q.correct){answered=true;buttons.forEach(b=>b.disabled=true);buttons[i].classList.add('correct');$('feedback').textContent='🎉 정답입니다! '+q.why;$('nextQuestion').textContent=index===2?'미션 완료 ▶':'다음 문제 ▶';$('nextQuestion').classList.remove('hidden')}else{buttons[i].classList.add('wrong');$('feedback').textContent='다시 생각해 보세요! 다른 답을 골라 보세요.';setTimeout(()=>{buttons[i].classList.remove('wrong')},650)}}$('goRegister').addEventListener('click',()=>show('register'));function submitStudent(){const grade=$('grade').value,klass=$('klass').value,number=Number($('number').value),name=$('studentName').value.trim();if(!grade||!klass||!Number.isInteger(number)||number<1||number>50||!name){$('validation').textContent='학년, 반, 번호, 이름을 모두 입력해 주세요! (번호는 1~50)';$('validation').scrollIntoView({block:'center',behavior:'smooth'});return}$('validation').textContent='';student={grade,klass,number,name};$('playerLabel').textContent=grade+'학년 '+klass+'반 '+number+'번 '+name;show('instructions')} $('submitStudent').addEventListener('click',submitStudent);$('studentForm').addEventListener('submit',e=>{e.preventDefault();submitStudent()});$('startQuiz').addEventListener('click',()=>{index=0;render();show('quiz')});$('nextQuestion').addEventListener('click',()=>{if(!answered)return;if(index===2){$('completeLabel').textContent=student.grade+'학년 '+student.klass+'반 '+student.number+'번 '+student.name;show('success');const status=$('saveStatus');status.textContent='⏳ 참여 기록을 저장하는 중이에요...';submitRecord(student,status)}else{index++;render()}});$('goHome').addEventListener('click',()=>{student=null;$('studentForm').reset();show('home')});show('home');})();
 
+
+/* 구글 시트의 실제 저장 결과를 확인하는 기능 */
+submitRecord = function(student, status) {
+  const title = document.querySelector('#success h2');
+  const message = document.querySelector('#success p');
+  const homeButton = document.getElementById('goHome');
+
+  const originalTitle = '축하합니다!';
+  const originalMessage =
+    '🎉 미션 성공! 우리 학교 생명 구조대가 되었어요!' +
+    '<br>🎁 이벤트 종료 후 상품 지급 예정입니다.';
+
+  title.textContent = '⏳ 참여 기록 저장 중!';
+  message.textContent = '저장이 완료될 때까지 화면을 닫지 마세요.';
+  status.textContent = '구글 시트에 저장하고 있어요...';
+  homeButton.disabled = true;
+
+  const requestId =
+    Date.now().toString() + '-' + Math.random().toString(36).slice(2);
+
+  const iframe = document.createElement('iframe');
+  const frameName = 'aed-save-' + requestId.replace(/[^a-z0-9-]/gi, '');
+  iframe.name = frameName;
+  iframe.style.display = 'none';
+
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = RECORD_URL;
+  form.target = frameName;
+  form.style.display = 'none';
+
+  const fields = {
+    grade: student.grade,
+    classNo: student.klass,
+    number: student.number,
+    name: student.name,
+    requestId: requestId
+  };
+
+  Object.entries(fields).forEach(([key, value]) => {
+    const input = document.createElement('input');
+    input.name = key;
+    input.value = String(value);
+    form.appendChild(input);
+  });
+
+  document.body.appendChild(iframe);
+  document.body.appendChild(form);
+
+  let finished = false;
+  let timer;
+
+  function cleanup() {
+    clearTimeout(timer);
+    window.removeEventListener('message', receive);
+    form.remove();
+    iframe.remove();
+    homeButton.disabled = false;
+  }
+
+  function receive(event) {
+    const allowed =
+      event.origin === 'https://script.google.com' ||
+      event.origin.endsWith('.googleusercontent.com');
+
+    if (!allowed || !event.data || typeof event.data !== 'object') {
+      return;
+    }
+
+    const data = event.data;
+
+    if (data.source !== 'aed-quiz-save' ||
+        data.requestId !== requestId ||
+        finished) {
+      return;
+    }
+
+    finished = true;
+    cleanup();
+
+    if (data.success === true) {
+      title.textContent = originalTitle;
+      message.innerHTML = originalMessage;
+      status.textContent = '✅ 구글 시트에 참여 기록이 저장됐어요!';
+    } else {
+      showFailure();
+    }
+  }
+
+  function showFailure() {
+    title.textContent = '⚠️ 저장 확인이 필요해요';
+    message.textContent =
+      '기록을 확인하지 못했어요. 선생님께 알려주세요.';
+    status.textContent = '저장 완료를 확인하지 못했습니다.';
+  }
+
+  window.addEventListener('message', receive);
+
+  timer = setTimeout(() => {
+    if (finished) return;
+    finished = true;
+    cleanup();
+    showFailure();
+  }, 30000);
+
+  form.submit();
+};
 </script></body></html>
